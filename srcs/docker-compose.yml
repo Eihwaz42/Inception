@@ -1,5 +1,6 @@
 services:
   mariadb:
+    image: mariadb:1.0
     build:
       context: ./requirements/mariadb
     container_name: mariadb
@@ -15,6 +16,7 @@ services:
     restart: unless-stopped
 
   wordpress:
+    image: wordpress:1.0
     build:
       context: ./requirements/wordpress
     container_name: wordpress
@@ -40,6 +42,7 @@ services:
     restart: unless-stopped
 
   nginx:
+    image: nginx:1.0
     build:
       context: ./requirements/nginx
     container_name: nginx

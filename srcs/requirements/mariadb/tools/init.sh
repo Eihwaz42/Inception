@@ -1,32 +1,33 @@
 #!/bin/bash
 
-set -e # si une commande échoue, arrête le script
+# Stop the script immediately if a command fails
+set -e
 
-# Crée le dossier nécessaire au socket/PID de MariaDB
-# et donne les bons droits à l'utilisateur mysql
+# Create the directory required by MariaDB for its PID/socket
+# and give the mysql user ownership of the required directories
 mkdir -p /run/mysqld
 chown -R mysql:mysql /run/mysqld /var/lib/mysql
 
-# Initialise les fichiers système MariaDB uniquement s'ils sont absents
+# Initialize the MariaDB system files only if they do not already exist
 if [ ! -d "/var/lib/mysql/mysql" ]; then
     mariadb-install-db --user=mysql --datadir=/var/lib/mysql
 fi
 
-# Initialise NOTRE base Inception uniquement au premier démarrage
-# Le fichier .inception_initialized sert de marqueur
+# Initialize the Inception database only on the first startup
+# The .inception_initialized file is used as an initialization marker
 if [ ! -f "/var/lib/mysql/.inception_initialized" ]; then
 
-    # Démarre temporairement MariaDB en arrière-plan
-    # sans accepter de connexions réseau
+    # Temporarily start MariaDB in the background
+    # without accepting network connections
     mysqld_safe --skip-networking &
-    pid="$!" # récupère le PID du processus lancé en arrière-plan
+    pid="$!" # Store the PID of the background process
 
-    # Attend que MariaDB soit prêt avant d'exécuter les commandes SQL
+    # Wait until MariaDB is ready to accept commands
     until mariadb-admin ping --silent; do
         sleep 1
     done
 
-    # Crée la DB WordPress, son utilisateur et configure root
+    # Create the WordPress database and user, and configure root
     mariadb <<EOF
 CREATE DATABASE IF NOT EXISTS \`${MYSQL_DATABASE}\`;
 CREATE USER IF NOT EXISTS '${MYSQL_USER}'@'%' IDENTIFIED BY '${MYSQL_PASSWORD}';
@@ -35,46 +36,47 @@ ALTER USER 'root'@'localhost' IDENTIFIED BY '${MYSQL_ROOT_PASSWORD}';
 FLUSH PRIVILEGES;
 EOF
 
-    # Arrête proprement l'instance temporaire avec le nouveau mot de passe root
+    # Gracefully stop the temporary MariaDB instance
+    # using the newly configured root password
     mariadb-admin -u root -p"${MYSQL_ROOT_PASSWORD}" shutdown
-    wait "$pid" # attend que le processus temporaire soit complètement terminé
+    wait "$pid"
 
-    # Crée un marqueur pour ne pas refaire l'initialisation
-    # lors des prochains démarrages
+    # Create the marker so initialization is not repeated
+    # on subsequent container startups
     touch /var/lib/mysql/.inception_initialized
 fi
 
-# Lance le vrai processus MariaDB au premier plan
-# exec permet à mysqld de devenir le processus principal (PID 1) du conteneur
+# Start the real MariaDB process in the foreground
+# exec makes mysqld the container's main process (PID 1)
 exec mysqld --user=mysql
 
 
-# container démarre
+# Container starts
 #        ↓
-# fichiers système MariaDB présents ?
-#      ↙                         ↘
-#    NON                         OUI
-#     ↓                           │
-# mariadb-install-db              │
-#      ↘                         ↙
-#   .inception_initialized existe ?
-#          ↙              ↘
-#        NON              OUI
-#         ↓                │
-# démarre MariaDB          │
-# temporairement           │
-#         ↓                │
-# attend qu'il soit prêt   │
-#         ↓                │
-# crée DB WordPress        │
-# + utilisateur wpuser     │
+# MariaDB system files exist?
+#      ↙                    ↘
+#     NO                    YES
+#      ↓                     │
+# Initialize MariaDB         │
+#      ↘                    ↙
+# .inception_initialized exists?
+#          ↙             ↘
+#         NO             YES
+#          ↓               │
+# Start MariaDB            │
+# temporarily              │
+#          ↓               │
+# Wait until ready         │
+#          ↓               │
+# Create WordPress DB      │
+# + WordPress DB user      │
 # + configure root         │
-#         ↓                │
-# arrête MariaDB temporaire│
-#         ↓                │
-# crée le marqueur         │
-# .inception_initialized   │
+#          ↓               │
+# Stop temporary MariaDB   │
+#          ↓               │
+# Create initialization    │
+# marker                   │
 #          ↘              ↙
 #             exec mysqld
-#                 ↓
-#         MariaDB reste vivant
+#                  ↓
+#         MariaDB stays alive

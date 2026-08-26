@@ -1,21 +1,21 @@
 COMPOSE = docker compose -f srcs/docker-compose.yml
 
-# Construit les images et démarre les conteneurs
+# Build the images and start the containers
 all:
 	$(COMPOSE) up -d --build
 
-# Arrête et supprime les conteneurs et le réseau
-# Les volumes et leurs données sont conservés
+# Stop and remove the containers and network
+# Persistent volumes and their data are preserved
 down:
 	$(COMPOSE) down
 
 clean:
 	$(COMPOSE) down
 
-# Supprime conteneurs, réseau, volumes Docker et données persistantes
+# Remove containers, network and Docker volumes
 fclean:
 	$(COMPOSE) down -v
 
 re: fclean all
 
-.PHONY: all data down clean fclean re
+.PHONY: all down clean fclean re

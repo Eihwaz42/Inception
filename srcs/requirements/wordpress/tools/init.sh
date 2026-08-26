@@ -1,27 +1,32 @@
 #!/bin/bash
 
+# Stop the script immediately if a command fails
 set -e
 
-# dossier où les fichiers WordPress vivront dans le conteneur
+# Create and enter the directory where WordPress files are stored
 mkdir -p /var/www/html
 cd /var/www/html
 
-# attend que MariaDB soit prêt
+# Wait until MariaDB is ready
 until mariadb-admin ping -h mariadb -u"$MYSQL_USER" -p"$MYSQL_PASSWORD" --silent; do
     sleep 1
 done
 
-# installe WordPress uniquement s'il n'est pas déjà configuré
+# Install WordPress only if it has not already been configured
 if [ ! -f "/var/www/html/wp-config.php" ]; then
+
+    # Download the WordPress core files
     wp core download --allow-root
 
+    # Create the WordPress configuration and connect it to MariaDB
     wp config create \
         --dbname="$MYSQL_DATABASE" \
         --dbuser="$MYSQL_USER" \
         --dbpass="$MYSQL_PASSWORD" \
         --dbhost="mariadb:3306" \
         --allow-root
-    
+
+    # Install WordPress and create the administrator account
     wp core install \
         --url="$WP_URL" \
         --title="$WP_TITLE" \
@@ -31,35 +36,42 @@ if [ ! -f "/var/www/html/wp-config.php" ]; then
         --skip-email \
         --allow-root
 
+    # Create the second WordPress user with the author role
     wp user create "$WP_USER" "$WP_USER_EMAIL" \
         --user_pass="$WP_USER_PASSWORD" \
         --role=author \
         --allow-root
 fi
 
+# Create the directory required by PHP-FPM
 mkdir -p /run/php
 
+# Start PHP-FPM in the foreground as the container's main process
 exec php-fpm8.2 -F
 
-# container WordPress démarre
-#        ↓
-# attend MariaDB
-#        ↓
-# MariaDB répond ?
-#   NON → sleep 1 → réessaie
-#        ↓
-#       OUI
-#        ↓
-# wp-config.php existe ?
-#   NON → télécharge WordPress
-#         ↓
-#         crée wp-config.php
-#         ↓
-#         installe le site + admin
-#         ↓
-#         crée le 2e utilisateur
-#   OUI → ne réinstalle pas
-#        ↓
-# lance PHP-FPM au premier plan
-#        ↓
-# container reste vivant
+
+# WordPress container starts
+#          ↓
+# Wait for MariaDB
+#          ↓
+# Is MariaDB ready?
+#   NO → sleep 1 → retry
+#          ↓
+#         YES
+#          ↓
+# Does wp-config.php exist?
+#      ↙              ↘
+#     NO              YES
+#      ↓                │
+# Download WordPress    │
+#      ↓                │
+# Create wp-config.php  │
+#      ↓                │
+# Install WordPress     │
+# + administrator       │
+#      ↓                │
+# Create second user    │
+#      ↘               ↙
+#       Start PHP-FPM
+#             ↓
+#    Container stays alive
